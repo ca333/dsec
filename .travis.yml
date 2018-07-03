@@ -21,6 +21,8 @@ notifications:
       Time: %{duration}'
     - 'Change view : %{compare_url}'
     - 'Build details : %{build_url}'
+before_deploy:
+    - git tag "$(date +'%Y%m%d%H%M%S')-$(git log --format=%h -1)"
 deploy:
   provider: releases
   api_key:
