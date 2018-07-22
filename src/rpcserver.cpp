@@ -280,6 +280,7 @@ static const CRPCCommand vRPCCommands[] =
     { "network",            "clearbanned",            &clearbanned,            true  },
 
     /* Block chain and UTXO */
+    { "blockchain",         "coinsupply",             &coinsupply,             true  },
     { "blockchain",         "getblockchaininfo",      &getblockchaininfo,      true  },
     { "blockchain",         "getbestblockhash",       &getbestblockhash,       true  },
     { "blockchain",         "getblockcount",          &getblockcount,          true  },
@@ -343,6 +344,21 @@ static const CRPCCommand vRPCCommands[] =
 #ifdef ENABLE_WALLET
     { "rawtransactions",    "fundrawtransaction",     &fundrawtransaction,     false },
 #endif
+
+/* tokens */
+    { "tokens",       "tokenorders",      &tokenorders,       true },
+    { "tokens",       "tokenaddress",     &tokenaddress,      true },
+    { "tokens",       "tokenbalance",     &tokenbalance,      true },
+    { "tokens",       "tokencreate",      &tokencreate,       true },
+    { "tokens",       "tokentransfer",    &tokentransfer,     true },
+    { "tokens",       "tokenbid",         &tokenbid,          true },
+    { "tokens",       "tokencancelbid",   &tokencancelbid,    true },
+    { "tokens",       "tokenfillbid",     &tokenfillbid,      true },
+    { "tokens",       "tokenask",         &tokenask,          true },
+    { "tokens",       "tokenswapask",     &tokenswapask,      true },
+    { "tokens",       "tokencancelask",   &tokencancelask,    true },
+    { "tokens",       "tokenfillask",     &tokenfillask,      true },
+    { "tokens",       "tokenfillswap",    &tokenfillswap,     true },
 
 /* Address index */
     { "addressindex",       "getaddressmempool",      &getaddressmempool,      true  },

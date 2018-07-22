@@ -1,3 +1,18 @@
+/******************************************************************************
+ * Copyright © 2014-2018 The SuperNET Developers.                             *
+ *                                                                            *
+ * See the AUTHORS, DEVELOPER-AGREEMENT and LICENSE files at                  *
+ * the top-level directory of this distribution for the individual copyright  *
+ * holder information and the developer policies on copyright and licensing.  *
+ *                                                                            *
+ * Unless otherwise agreed in a custom licensing agreement, no part of the    *
+ * SuperNET software, including this file may be copied, modified, propagated *
+ * or distributed except according to the terms contained in the LICENSE file *
+ *                                                                            *
+ * Removal or modification of this copyright notice is prohibited.            *
+ *                                                                            *
+ ******************************************************************************/
+
 #include <assert.h>
 #include <cryptoconditions.h>
 
@@ -45,15 +60,20 @@ bool Eval::Dispatch(const CC *cond, const CTransaction &txTo, unsigned int nIn)
 
     uint8_t ecode = cond->code[0];
     std::vector<uint8_t> vparams(cond->code+1, cond->code+cond->codeLength);
-
-    if (ecode == EVAL_IMPORTPAYOUT) {
-        return ImportPayout(vparams, txTo, nIn);
+    switch ( ecode )
+    {
+        case EVAL_IMPORTPAYOUT:
+            return ImportPayout(vparams, txTo, nIn);
+            break;
+            
+        case EVAL_IMPORTCOIN:
+            return ImportCoin(vparams, txTo, nIn);
+            break;
+            
+        case EVAL_ASSETS:
+            return ProcessAssets(this, vparams, txTo, nIn);
+            break;
     }
-
-    if (ecode == EVAL_IMPORTCOIN) {
-        return ImportCoin(vparams, txTo, nIn);
-    }
-
     return Invalid("invalid-code");
 }
 
