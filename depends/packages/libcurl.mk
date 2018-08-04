@@ -6,12 +6,12 @@ $(package)_sha256_hash=a84b635941c74e26cce69dd817489bec687eb1f230e7d1897fc5b5f10
 $(package)_config_opts_linux=--disable-shared --enable-static --prefix=$(host_prefix)
 $(package)_config_opts_mingw32=--enable-mingw --disable-shared --enable-static --prefix=$(host_prefix) --host=x86_64-w64-mingw32
 $(package)_config_opts_darwin=--disable-shared --enable-static --prefix=$(host_prefix)
-$(package)_cflags_darwin=-mmacosx-version-min=10.9
+$(package)_cflags_darwin=-mmacosx-version-min=10.11
 $(package)_conf_tool=./configure
 
 ifeq ($(build_os),darwin)
 define $(package)_set_vars
-  $(package)_build_env=MACOSX_DEPLOYMENT_TARGET="10.9"
+  $(package)_build_env=MACOSX_DEPLOYMENT_TARGET="10.11"
 endef
 endif
 
@@ -22,7 +22,7 @@ endef
 
 ifeq ($(build_os),darwin)
 define $(package)_build_cmds
-  $(MAKE) CPPFLAGS='-fPIC' CFLAGS='-mmacosx-version-min=10.9'
+  $(MAKE) CPPFLAGS='-fPIC' CFLAGS='-mmacosx-version-min=10.11'
 endef
 else
 define $(package)_build_cmds
