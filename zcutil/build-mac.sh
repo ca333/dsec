@@ -1,6 +1,6 @@
 #!/bin/bash
-export CC=gcc-5
-export CXX=g++-5
+export CC=gcc-6
+export CXX=g++-6
 export LIBTOOL=libtool
 export AR=ar
 export RANLIB=ranlib
