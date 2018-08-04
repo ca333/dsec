@@ -1,6 +1,7 @@
 os:
   - linux
   - osx
+osx_image: xcode8
 dist: xenial
 language: cpp
 compiler:
