@@ -1,9 +1,12 @@
-os:
-  - linux
-    dist: xenial
-  - osx
-    osx_image: xcode8
 language: cpp
+
+matrix:
+  include:
+    - os: linux
+      dist: xenial
+      sudo: required
+    - os: osx
+      osx_image: xcode8      
 compiler:
 - gcc
 before_install:
