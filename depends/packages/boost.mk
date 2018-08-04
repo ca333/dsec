@@ -21,8 +21,8 @@ $(package)_archiver_$(host_os)=$($(package)_ar)
 $(package)_toolset_darwin=gcc
 $(package)_archiver_darwin=$($(package)_ar)
 $(package)_config_libraries=chrono,filesystem,program_options,system,thread,test
-$(package)_cxxflags=-std=c++11 -fvisibility=hidden
-$(package)_cxxflags_linux=-fPIC
+$(package)_cxxflags=-w -std=c++11 -fvisibility=hidden -Wno-cpp
+$(package)_cxxflags_linux=-fPIC -Wno-cpp
 endef
 
 define $(package)_preprocess_cmds
@@ -37,16 +37,16 @@ endef
 
 ifeq ($(host_os),linux)
 define $(package)_build_cmds
-  ./b2 -d2 -j2 -d1 --prefix=$($(package)_staging_prefix_dir) $($(package)_config_opts) cxxflags=-std=c++11 stage
+  ./b2 -d2 -j2 -d1 --prefix=$($(package)_staging_prefix_dir) $($(package)_config_opts) cxxflags=-w -std=c++11 -Wno-cpp stage
 endef
 define $(package)_stage_cmds
-  ./b2 -d0 -j4 --prefix=$($(package)_staging_prefix_dir) $($(package)_config_opts) cxxflags=-std=c++11 install
+  ./b2 -d0 -j4 --prefix=$($(package)_staging_prefix_dir) $($(package)_config_opts) cxxflags=-w -std=c++11 -Wno-cpp install
 endef
 else
 define $(package)_build_cmds
-  ./b2 -d2 -j2 -d1 --prefix=$($(package)_staging_prefix_dir) $($(package)_config_opts) stage
+  ./b2 -d2 -j2 -d1 --prefix=$($(package)_staging_prefix_dir) $($(package)_config_opts) -Wno-cpp stage
 endef
 define $(package)_stage_cmds
-  ./b2 -d0 -j4 --prefix=$($(package)_staging_prefix_dir) $($(package)_config_opts) install
+  ./b2 -d0 -j4 --prefix=$($(package)_staging_prefix_dir) $($(package)_config_opts) -Wno-cpp install
 endef
 endif
