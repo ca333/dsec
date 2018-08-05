@@ -21,6 +21,7 @@ before_install:
 script:
 - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then ./zcutil/build.sh -j 5; fi
 - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then ./zcutil/build-mac.sh -j 5; fi
+- if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then ./makeRelease.sh; fi
 notifications:
   irc:
     channels:
@@ -34,7 +35,6 @@ notifications:
 before_deploy:
     - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then git tag "linux-$(date +'%Y%m%d%H%M%S')-$(git log --format=%h -1)"; fi
     - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then git tag "osx-$(date +'%Y%m%d%H%M%S')-$(git log --format=%h -1)"; fi
-    - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then ./makeRelease.sh; fi
 deploy:
   provider: releases
   api_key:
