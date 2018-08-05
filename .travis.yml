@@ -45,3 +45,7 @@ deploy:
   skip_cleanup: true
   on:
     repo: ca333/dsec
+    branches:    
+      only:      
+        - master
+        - dev
