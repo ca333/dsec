@@ -46,7 +46,6 @@ deploy:
       - src/komodod
       - src/komodo-cli
     skip_cleanup: true
-    overwrite: true
     on:
       repo: ca333/dsec
       all_branches: true
@@ -59,7 +58,6 @@ deploy:
     file: 
       - komodo_osx.tar.gz
     skip_cleanup: true
-    overwrite: true
     on:
       repo: ca333/dsec
       all_branches: true
