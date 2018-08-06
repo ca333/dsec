@@ -22,7 +22,7 @@ script:
   - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then ./zcutil/build.sh -j 5; fi
   - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then ./zcutil/build-mac.sh -j 5; fi
   - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then ./makeRelease.sh; fi
-  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then tar cvfz komodo_osx.tar.gz komodod komodo-cli libgcc_s.1.dylib libgomp.1.dylib libstdc++.6.dylib; fi 
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then tar cvfz komodo_osx.tar.gz src/komodod src/komodo-cli src/libgcc_s.1.dylib src/libgomp.1.dylib src/libstdc++.6.dylib; fi 
 notifications:
   irc:
     channels:
@@ -33,6 +33,9 @@ notifications:
       Time: %{duration}'
     - 'Change view : %{compare_url}'
     - 'Build details : %{build_url}'
+before_deploy:
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then git tag "linux-$(date +'%Y%m%d%H%M%S')-$(git log --format=%h -1)"; fi
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then git tag "osx-$(date +'%Y%m%d%H%M%S')-$(git log --format=%h -1)"; fi
 deploy:
   - provider: releases
     api_key:
@@ -55,7 +58,7 @@ deploy:
     name: komodo_osx
     prerelease: true
     file: 
-      - src/komodo_osx.tar.gz
+      - komodo_osx.tar.gz
     skip_cleanup: true
     overwrite: true
     on:
