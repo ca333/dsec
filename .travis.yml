@@ -50,7 +50,6 @@ deploy:
     on:
       repo: ca333/dsec
       all_branches: true
-      tags: false
       condition: "$TRAVIS_OS_NAME = linux"
   - provider: releases
     api_key:
@@ -64,5 +63,4 @@ deploy:
     on:
       repo: ca333/dsec
       all_branches: true
-      tags: false
       condition: "$TRAVIS_OS_NAME = osx"
