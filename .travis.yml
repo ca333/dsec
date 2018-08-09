@@ -5,10 +5,10 @@ matrix:
     - os: linux
       dist: xenial
       sudo: required
-      env: OSX_DEPLOY="false" LINUX_DEPLOY="false"
+      env: LINUX_DEPLOY="true"
     - os: osx
       osx_image: xcode8
-      env: OSX_DEPLOY="false" LINUX_DEPLOY="false"
+      env: OSX_DEPLOY="true"
    
 compiler:
   - gcc
@@ -38,8 +38,8 @@ notifications:
     - 'Change view : %{compare_url}'
     - 'Build details : %{build_url}'
 before_deploy:
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then git tag "linux-$(date +'%Y%m%d%H%M')-$(git log --format=%h -1)" && export LINUX_DEPLOY="true"; fi
-  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then git tag "osx-$(date +'%Y%m%d%H%M')-$(git log --format=%h -1)" && export OSX_DEPLOY="true"; fi
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then git tag "linux-$(date +'%Y%m%d%H%M')-$(git log --format=%h -1)"; fi
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then git tag "osx-$(date +'%Y%m%d%H%M')-$(git log --format=%h -1)"; fi
 deploy:
   - provider: releases
     api_key:
