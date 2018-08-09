@@ -5,8 +5,11 @@ matrix:
     - os: linux
       dist: xenial
       sudo: required
+      env: OSX_DEPLOY="false" LINUX_DEPLOY="false"
     - os: osx
-      osx_image: xcode8      
+      osx_image: xcode8
+      env: OSX_DEPLOY="false" LINUX_DEPLOY="false"
+   
 compiler:
   - gcc
 before_install:
@@ -35,8 +38,8 @@ notifications:
     - 'Change view : %{compare_url}'
     - 'Build details : %{build_url}'
 before_deploy:
-  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then git tag "linux-$(date +'%Y%m%d%H%M')-$(git log --format=%h -1)"; fi
-  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then git tag "osx-$(date +'%Y%m%d%H%M')-$(git log --format=%h -1)"; fi
+  - if [[ "$TRAVIS_OS_NAME" == "linux" ]]; then git tag "linux-$(date +'%Y%m%d%H%M')-$(git log --format=%h -1)" && export LINUX_DEPLOY="true"; fi
+  - if [[ "$TRAVIS_OS_NAME" == "osx" ]]; then git tag "osx-$(date +'%Y%m%d%H%M')-$(git log --format=%h -1)" && export OSX_DEPLOY="true"; fi
 deploy:
   - provider: releases
     api_key:
@@ -49,7 +52,7 @@ deploy:
     on:
       repo: ca333/dsec
       all_branches: true
-      condition: "$TRAVIS_TAG = /^linux-.*$/"
+      condition: $LINUX_DEPLOY = "true"
   - provider: releases
     api_key:
       secure: g13qnqZrOFbONaWPdqcMApSYG5ms/PkIztpSqkmI8Z7t7eVUMELTHgjByNHlS/MwjiG2Gtojpb8uUpc5QrutaEqXo3flUEZ1Eu63sboC4/3B5IVYFCNnIk6RLTApnOL0tiehLvW/hTAzmQcjBIGgURarx4mqoOxofaX7NhnWOrz3iIy4Y8+Cal/Lra6uQtGN2lv0JzHfRyNFk77BKgwdrIeK+JeRz6YnXyBNkhbPaJhpkUD63Cbx/SOPYj//l9BYo7gklncyqh0s54pAtxSCy09l/DE71DxqO4zKCXHXXwZuRmkyemNzFaA/6RF7+sRu90n0mFFnvo3WAHTauS61dHv3g86MbDErrevpYRN/4Xn48v0fEY0dczMNmxT+x1/E44XGWMIDusELHrsyjpDeNHG7gmz6eU5dIC7BixtpwpmIgAoBRAcypvGWpqGNFOD97Ihdg4BT+M+AQ4exV9D+6DDn+1KeQBPSZK9P7meKt/hAIueu8nR15XT+/867m5dpiyF0Fo7Kmgp5+UpkaXSsWdyGv1aP3v+Qkuyds7huWLAJCzJVINQ2tvvlp0UJ3kpVSo4BOCTTXbMA5oy4EfV1fLaPU948w5BS51+flBe7pCY5M/dKDdwjbvr5oH2VXH5VVmNPVVnr2m6baw4dhd/VKiTTTfGeyCGBZkkIlVMuIbw=
@@ -61,4 +64,4 @@ deploy:
     on:
       repo: ca333/dsec
       all_branches: true
-      condition: "$TRAVIS_TAG = /^osx-.*$/"
+      condition: $OSX_DEPLOY = "true"
