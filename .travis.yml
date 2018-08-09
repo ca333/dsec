@@ -11,8 +11,8 @@ matrix:
       env: OSX_DEPLOY="true" LINUX_DEPLOY="false"
 branches:
   only:
-  - master
-  - dev
+    - master
+    - dev
 compiler:
   - gcc
 before_install:
