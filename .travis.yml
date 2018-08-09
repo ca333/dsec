@@ -54,7 +54,9 @@ deploy:
     skip_cleanup: true
     on:
       repo: ca333/dsec
-      all_branches: true
+      branch: 
+        - master
+        - dev
       condition: $LINUX_DEPLOY = "true"
   - provider: releases
     api_key:
@@ -66,5 +68,7 @@ deploy:
     skip_cleanup: true
     on:
       repo: ca333/dsec
-      all_branches: true
+      branch: 
+        - master
+        - dev
       condition: $OSX_DEPLOY = "true"
