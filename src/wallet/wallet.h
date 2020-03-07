@@ -60,6 +60,7 @@ extern bool bSpendZeroConfChange;
 extern bool fSendFreeTransactions;
 extern bool fPayAtLeastCustomFee;
 
+
 //! -paytxfee default
 static const CAmount DEFAULT_TRANSACTION_FEE = 0;
 //! -paytxfee will warn if called with a higher fee than this amount (in satoshis) per KB
@@ -75,8 +76,7 @@ static const unsigned int MAX_FREE_TRANSACTION_CREATE_SIZE = 1000;
 //! Size of witness cache
 //  Should be large enough that we can expect not to reorg beyond our cache
 //  unless there is some exceptional network disruption.
-#define _COINBASE_MATURITY 100
-static const unsigned int WITNESS_CACHE_SIZE = _COINBASE_MATURITY+10;
+extern unsigned int WITNESS_CACHE_SIZE;
 
 //! Size of HD seed in bytes
 static const size_t HD_WALLET_SEED_LENGTH = 32;
@@ -386,7 +386,7 @@ public:
         READWRITE(nIndex);
     }
 
-    int SetMerkleBranch(const CBlock& block);
+    void SetMerkleBranch(const CBlock& block);
 
 
     /**
@@ -566,6 +566,16 @@ public:
 
     void SetSproutNoteData(mapSproutNoteData_t &noteData);
     void SetSaplingNoteData(mapSaplingNoteData_t &noteData);
+
+    std::pair<libzcash::SproutNotePlaintext, libzcash::SproutPaymentAddress> DecryptSproutNote(
+	JSOutPoint jsop) const;
+    boost::optional<std::pair<
+	libzcash::SaplingNotePlaintext,
+	libzcash::SaplingPaymentAddress>> DecryptSaplingNote(SaplingOutPoint op) const;
+    boost::optional<std::pair<
+	libzcash::SaplingNotePlaintext,
+	libzcash::SaplingPaymentAddress>> RecoverSaplingNote(
+            SaplingOutPoint op, std::set<uint256>& ovks) const;	
 
     //! filter decides which addresses will count towards the debit
     CAmount GetDebit(const isminefilter& filter) const;
@@ -807,10 +817,17 @@ protected:
         }
         try {
             for (std::pair<const uint256, CWalletTx>& wtxItem : mapWallet) {
-                if (!walletdb.WriteTx(wtxItem.first, wtxItem.second)) {
-                    LogPrintf("SetBestChain(): Failed to write CWalletTx, aborting atomic write\n");
-                    walletdb.TxnAbort();
-                    return;
+                auto wtx = wtxItem.second;
+                // We skip transactions for which mapSproutNoteData and mapSaplingNoteData
+                // are empty. This covers transactions that have no Sprout or Sapling data
+                // (i.e. are purely transparent), as well as shielding and unshielding
+                // transactions in which we only have transparent addresses involved.
+                if (!(wtx.mapSproutNoteData.empty() && wtx.mapSaplingNoteData.empty())) {
+                    if (!walletdb.WriteTx(wtxItem.first, wtx)) {
+                        LogPrintf("SetBestChain(): Failed to write CWalletTx, aborting atomic write\n");
+                        walletdb.TxnAbort();
+                        return;
+                    }
                 }
             }
             if (!walletdb.WriteWitnessCacheSize(nWitnessCacheSize)) {
@@ -1386,6 +1403,19 @@ private:
     CWallet *m_wallet;
 public:
     PaymentAddressBelongsToWallet(CWallet *wallet) : m_wallet(wallet) {}
+
+    bool operator()(const libzcash::SproutPaymentAddress &zaddr) const;
+    bool operator()(const libzcash::SaplingPaymentAddress &zaddr) const;
+    bool operator()(const libzcash::InvalidEncoding& no) const;
+};
+
+
+class IncomingViewingKeyBelongsToWallet : public boost::static_visitor<bool>
+{
+private:
+    CWallet *m_wallet;
+public:
+    IncomingViewingKeyBelongsToWallet(CWallet *wallet) : m_wallet(wallet) {}
 
     bool operator()(const libzcash::SproutPaymentAddress &zaddr) const;
     bool operator()(const libzcash::SaplingPaymentAddress &zaddr) const;

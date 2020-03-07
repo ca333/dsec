@@ -1,9 +1,7 @@
 # Copyright (c) 2014 The Bitcoin Core developers
-# Copyright (c) 2018 The SuperNET developers
+# Copyright (c) 2018-2019 The SuperNET developers
 # Distributed under the MIT software license, see the accompanying
 # file COPYING or http://www.opensource.org/licenses/mit-license.php.
-
-
 #
 # Helpful routines for regression testing
 #
@@ -58,7 +56,7 @@ def sync_blocks(rpc_connections, wait=1):
 def sync_mempools(rpc_connections, wait=1):
     """
     Wait until everybody has the same transactions in their memory
-    pools
+    pools, and has notified all internal listeners of them
     """
     while True:
         pool = set(rpc_connections[0].getrawmempool())
@@ -67,6 +65,14 @@ def sync_mempools(rpc_connections, wait=1):
             if set(rpc_connections[i].getrawmempool()) == pool:
                 num_match = num_match+1
         if num_match == len(rpc_connections):
+            break
+        time.sleep(wait)
+
+    # Now that the mempools are in sync, wait for the internal
+    # notifications to finish
+    while True:
+        notified = [ x.getmempoolinfo()['fullyNotified'] for x in rpc_connections ]
+        if notified == [ True ] * len(notified):
             break
         time.sleep(wait)
 
@@ -415,9 +421,15 @@ def assert_true(condition, message = ""):
 def assert_false(condition, message = ""):
     assert_true(not condition, message)
 
+# assert thing2 > thing1
 def assert_greater_than(thing1, thing2):
     if thing1 <= thing2:
         raise AssertionError("%s <= %s"%(str(thing1),str(thing2)))
+
+# assert thing2 >= thing1
+def assert_greater_than_or_equal(thing1, thing2):
+    if thing1 < thing2:
+        raise AssertionError("%s < %s"%(str(thing1),str(thing2)))
 
 def assert_raises(exc, fun, *args, **kwds):
     try:

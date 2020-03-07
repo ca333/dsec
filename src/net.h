@@ -33,6 +33,7 @@
 #include "sync.h"
 #include "uint256.h"
 #include "utilstrencodings.h"
+#include "util.h"
 
 #include <deque>
 #include <stdint.h>
@@ -63,7 +64,7 @@ static const unsigned int MAX_INV_SZ = 50000;
 /** The maximum number of new addresses to accumulate before announcing. */
 static const unsigned int MAX_ADDR_TO_SEND = 1000;
 /** Maximum length of incoming protocol messages (no message over 2 MiB is currently acceptable). */
-static const unsigned int MAX_PROTOCOL_MESSAGE_LENGTH = 2 * 1024 * 1024;
+static const unsigned int MAX_PROTOCOL_MESSAGE_LENGTH = (_MAX_BLOCK_SIZE + 24); // 24 is msgheader size
 /** Maximum length of strSubVer in `version` message */
 static const unsigned int MAX_SUBVERSION_LENGTH = 256;
 /** -listen default */
@@ -275,6 +276,7 @@ public:
     int64_t nLastRecv;
     int64_t nTimeConnected;
     int64_t nTimeOffset;
+    uint32_t prevtimes[16];
     CAddress addr;
     std::string addrName;
     CService addrLocal;
@@ -458,6 +460,7 @@ public:
 
     void PushMessage(const char* pszCommand)
     {
+        //fprintf(stderr,"push.(%s)\n",pszCommand);
         try
         {
             BeginMessage(pszCommand);
@@ -473,6 +476,7 @@ public:
     template<typename T1>
     void PushMessage(const char* pszCommand, const T1& a1)
     {
+        //fprintf(stderr,"push.(%s)\n",pszCommand);
         try
         {
             BeginMessage(pszCommand);

@@ -38,6 +38,7 @@
 #include "crypter.h"
 #include "coins.h"
 #include "zcash/zip32.h"
+#include "cc/CCinclude.h"
 
 #include <assert.h>
 
@@ -59,13 +60,10 @@ bool fSendFreeTransactions = false;
 bool fPayAtLeastCustomFee = true;
 #include "komodo_defs.h"
 
-extern int32_t USE_EXTERNAL_PUBKEY;
-extern std::string NOTARY_PUBKEY;
-extern int32_t KOMODO_EXCHANGEWALLET;
-extern char ASSETCHAINS_SYMBOL[KOMODO_ASSETCHAIN_MAXLEN];
-extern int32_t VERUS_MIN_STAKEAGE;
 CBlockIndex *komodo_chainactive(int32_t height);
 extern std::string DONATION_PUBKEY;
+int32_t komodo_dpowconfs(int32_t height,int32_t numconfs);
+int tx_height( const uint256 &hash );
 
 /**
  * Fees smaller than this (in satoshi) are considered zero fee (for transaction creation)
@@ -176,7 +174,7 @@ SaplingPaymentAddress CWallet::GenerateNewSaplingZKey()
     return addr;
 }
 
-// Add spending key to keystore 
+// Add spending key to keystore
 bool CWallet::AddSaplingZKey(
     const libzcash::SaplingExtendedSpendingKey &sk,
     const libzcash::SaplingPaymentAddress &defaultAddr)
@@ -186,7 +184,8 @@ bool CWallet::AddSaplingZKey(
     if (!CCryptoKeyStore::AddSaplingSpendingKey(sk, defaultAddr)) {
         return false;
     }
-    
+
+    nTimeFirstKey = 1; // No birthday information for viewing keys.
     if (!fFileBacked) {
         return true;
     }
@@ -195,7 +194,7 @@ bool CWallet::AddSaplingZKey(
         auto ivk = sk.expsk.full_viewing_key().in_viewing_key();
         return CWalletDB(strWalletFile).WriteSaplingZKey(ivk, sk, mapSaplingZKeyMetadata[ivk]);
     }
-    
+
     return true;
 }
 
@@ -577,10 +576,10 @@ bool CWallet::ChangeWalletPassphrase(const SecureString& strOldWalletPassphrase,
     return false;
 }
 
-void CWallet::ChainTip(const CBlockIndex *pindex, 
+void CWallet::ChainTip(const CBlockIndex *pindex,
                        const CBlock *pblock,
                        SproutMerkleTree sproutTree,
-                       SaplingMerkleTree saplingTree, 
+                       SaplingMerkleTree saplingTree,
                        bool added)
 {
     if (added) {
@@ -1160,7 +1159,7 @@ bool DecrementNoteWitnesses(NoteDataMap& noteDataMap, int indexHeight, int64_t n
             if (nd->witnesses.size() > 0) {
                 nd->witnesses.pop_front();
             }
-            // indexHeight is the height of the block being removed, so 
+            // indexHeight is the height of the block being removed, so
             // the new witness cache height is one below it.
             nd->witnessHeight = indexHeight - 1;
         }
@@ -1180,9 +1179,10 @@ bool DecrementNoteWitnesses(NoteDataMap& noteDataMap, int indexHeight, int64_t n
             assert((nWitnessCacheSize - 1) >= nd->witnesses.size());
         }
     }
-    assert(KOMODO_REWIND != 0 || nWitnessCacheSize > 0);
+    assert(KOMODO_REWIND != 0 || nWitnessCacheSize > 0 || WITNESS_CACHE_SIZE != _COINBASE_MATURITY+10);
     return true;
 }
+
 
 void CWallet::DecrementNoteWitnesses(const CBlockIndex* pindex)
 {
@@ -1193,10 +1193,17 @@ void CWallet::DecrementNoteWitnesses(const CBlockIndex* pindex)
         if (!::DecrementNoteWitnesses(wtxItem.second.mapSaplingNoteData, pindex->GetHeight(), nWitnessCacheSize))
             needsRescan = true;
     }
-    nWitnessCacheSize -= 1;
-    // TODO: If nWitnessCache is zero, we need to regenerate the caches (#1302)
-    assert(nWitnessCacheSize > 0);
-
+    if ( WITNESS_CACHE_SIZE == _COINBASE_MATURITY+10 )
+    {
+        nWitnessCacheSize -= 1;
+        // TODO: If nWitnessCache is zero, we need to regenerate the caches (#1302)
+        assert(nWitnessCacheSize > 0);
+    }
+    else
+    {
+        if ( nWitnessCacheSize > 0 )
+            nWitnessCacheSize--;
+    }
     // For performance reasons, we write out the witness cache in
     // CWallet::SetBestChain() (which also ensures that overall consistency
     // of the wallet.dat is maintained).
@@ -1402,8 +1409,8 @@ int32_t CWallet::VerusStakeTransaction(CBlock *pBlock, CMutableTransaction &txNe
         return 0;
     }
 
-    bool signSuccess; 
-    SignatureData sigdata; 
+    bool signSuccess;
+    SignatureData sigdata;
     uint64_t txfee;
     auto consensusBranchId = CurrentEpochBranchId(stakeHeight, Params().GetConsensus());
 
@@ -1535,26 +1542,29 @@ void CWallet::UpdateSaplingNullifierNoteMapWithTx(CWalletTx& wtx) {
         }
         else {
             uint64_t position = nd.witnesses.front().position();
-            SaplingFullViewingKey fvk = mapSaplingFullViewingKeys.at(nd.ivk);
-            OutputDescription output = wtx.vShieldedOutput[op.n];
-            auto optPlaintext = SaplingNotePlaintext::decrypt(output.encCiphertext, nd.ivk, output.ephemeralKey, output.cm);
-            if (!optPlaintext) {
-                // An item in mapSaplingNoteData must have already been successfully decrypted,
-                // otherwise the item would not exist in the first place.
-                assert(false);
+            // Skip if we only have incoming viewing key
+            if (mapSaplingFullViewingKeys.count(nd.ivk) != 0) {
+                SaplingFullViewingKey fvk = mapSaplingFullViewingKeys.at(nd.ivk);
+                OutputDescription output = wtx.vShieldedOutput[op.n];
+                auto optPlaintext = SaplingNotePlaintext::decrypt(output.encCiphertext, nd.ivk, output.ephemeralKey, output.cm);
+                if (!optPlaintext) {
+                    // An item in mapSaplingNoteData must have already been successfully decrypted,
+                    // otherwise the item would not exist in the first place.
+                    assert(false);
+                }
+                auto optNote = optPlaintext.get().note(nd.ivk);
+                if (!optNote) {
+                    assert(false);
+                }
+                auto optNullifier = optNote.get().nullifier(fvk, position);
+                if (!optNullifier) {
+                    // This should not happen.  If it does, maybe the position has been corrupted or miscalculated?
+                    assert(false);
+                }
+                uint256 nullifier = optNullifier.get();
+                mapSaplingNullifiersToNotes[nullifier] = op;
+                item.second.nullifier = nullifier;
             }
-            auto optNote = optPlaintext.get().note(nd.ivk);
-            if (!optNote) {
-                assert(false);
-            }
-            auto optNullifier = optNote.get().nullifier(fvk, position);
-            if (!optNullifier) {
-                // This should not happen.  If it does, maybe the position has been corrupted or miscalculated?
-                assert(false);
-            }
-            uint256 nullifier = optNullifier.get();
-            mapSaplingNullifiersToNotes[nullifier] = op;
-            item.second.nullifier = nullifier;
         }
     }
 }
@@ -1746,6 +1756,8 @@ bool CWallet::AddToWalletIfInvolvingMe(const CTransaction& tx, const CBlock* pbl
 {
     {
         AssertLockHeld(cs_wallet);
+        if ( tx.IsCoinBase() && tx.vout[0].nValue == 0 )
+            return false;
         bool fExisted = mapWallet.count(tx.GetHash()) != 0;
         if (fExisted && !fUpdate) return false;
         auto sproutNoteData = FindMySproutNotes(tx);
@@ -1759,6 +1771,48 @@ bool CWallet::AddToWalletIfInvolvingMe(const CTransaction& tx, const CBlock* pbl
         }
         if (fExisted || IsMine(tx) || IsFromMe(tx) || sproutNoteData.size() > 0 || saplingNoteData.size() > 0)
         {
+            /**
+             * New implementation of wallet filter code.
+             *
+             * If any vout of tx is belongs to wallet (IsMine(tx) == true) and tx
+             * is not from us, mean, if every vin not belongs to our wallet
+             * (IsFromMe(tx) == false), then tx need to be checked through wallet
+             * filter. If tx haven't any vin from trusted / whitelisted address it
+             * shouldn't be added into wallet.
+            */
+
+            if (!mapMultiArgs["-whitelistaddress"].empty())
+            {
+                if (IsMine(tx) && !tx.IsCoinBase() && !IsFromMe(tx))
+                {
+                    bool fIsFromWhiteList = false;
+                    BOOST_FOREACH(const CTxIn& txin, tx.vin)
+                    {
+                        if (fIsFromWhiteList) break;
+                        uint256 hashBlock; CTransaction prevTx; CTxDestination dest;
+                        if (GetTransaction(txin.prevout.hash, prevTx, hashBlock, true) && ExtractDestination(prevTx.vout[txin.prevout.n].scriptPubKey,dest))
+                        {
+                            BOOST_FOREACH(const std::string& strWhiteListAddress, mapMultiArgs["-whitelistaddress"])
+                            {
+                                if (EncodeDestination(dest) == strWhiteListAddress)
+                                {
+                                    fIsFromWhiteList = true;
+                                    // std::cerr << __FUNCTION__ << " tx." << tx.GetHash().ToString() << " passed wallet filter! whitelistaddress." << EncodeDestination(dest) << std::endl;
+                                    LogPrintf("tx.%s passed wallet filter! whitelistaddress.%s\n", tx.GetHash().ToString(),EncodeDestination(dest));
+                                    break;
+                                }
+                            }
+                        }
+                    }
+                    if (!fIsFromWhiteList)
+                    {
+                        // std::cerr << __FUNCTION__ << " tx." << tx.GetHash().ToString() << " is NOT passed wallet filter!" << std::endl;
+                        LogPrintf("tx.%s is NOT passed wallet filter!\n", tx.GetHash().ToString());
+                        return false;
+                    }
+                }
+            }
+
             CWalletTx wtx(this,tx);
 
             if (sproutNoteData.size() > 0) {
@@ -1785,7 +1839,7 @@ bool CWallet::AddToWalletIfInvolvingMe(const CTransaction& tx, const CBlock* pbl
 
 void CWallet::SyncTransaction(const CTransaction& tx, const CBlock* pblock)
 {
-    LOCK2(cs_main, cs_wallet);
+    LOCK(cs_wallet);
     if (!AddToWalletIfInvolvingMe(tx, pblock, true))
         return; // Not one of ours
 
@@ -1939,23 +1993,40 @@ std::pair<mapSaplingNoteData_t, SaplingIncomingViewingKeyMap> CWallet::FindMySap
     // Protocol Spec: 4.19 Block Chain Scanning (Sapling)
     for (uint32_t i = 0; i < tx.vShieldedOutput.size(); ++i) {
         const OutputDescription output = tx.vShieldedOutput[i];
+        bool found = false;
         for (auto it = mapSaplingFullViewingKeys.begin(); it != mapSaplingFullViewingKeys.end(); ++it) {
             SaplingIncomingViewingKey ivk = it->first;
             auto result = SaplingNotePlaintext::decrypt(output.encCiphertext, ivk, output.ephemeralKey, output.cm);
-            if (!result) {
-                continue;
+            if (result) {
+                auto address = ivk.address(result.get().d);
+                if (address && mapSaplingIncomingViewingKeys.count(address.get()) == 0) {
+                    viewingKeysToAdd[address.get()] = ivk;
+                }
+                // We don't cache the nullifier here as computing it requires knowledge of the note position
+                // in the commitment tree, which can only be determined when the transaction has been mined.
+                SaplingOutPoint op {hash, i};
+                SaplingNoteData nd;
+                nd.ivk = ivk;
+                noteData.insert(std::make_pair(op, nd));
+                found = true;
+                break;
             }
-            auto address = ivk.address(result.get().d);
-            if (address && mapSaplingIncomingViewingKeys.count(address.get()) == 0) {
-                viewingKeysToAdd[address.get()] = ivk;
+        }
+        if (!found) {
+            for (auto it = mapSaplingIncomingViewingKeys.begin(); it != mapSaplingIncomingViewingKeys.end(); ++it) {
+                SaplingIncomingViewingKey ivk = it-> second;
+                auto result = SaplingNotePlaintext::decrypt(output.encCiphertext, ivk, output.ephemeralKey, output.cm);
+                if (!result) {
+                    continue;
+                }
+                // We don't cache the nullifier here as computing it requires knowledge of the note position
+                // in the commitment tree, which can only be determined when the transaction has been mined.
+                SaplingOutPoint op {hash, i};
+                SaplingNoteData nd;
+                nd.ivk = ivk;
+                noteData.insert(std::make_pair(op, nd));
+                break;
             }
-            // We don't cache the nullifier here as computing it requires knowledge of the note position
-            // in the commitment tree, which can only be determined when the transaction has been mined.
-            SaplingOutPoint op {hash, i};
-            SaplingNoteData nd;
-            nd.ivk = ivk;
-            noteData.insert(std::make_pair(op, nd));
-            break;
         }
     }
 
@@ -2175,7 +2246,7 @@ isminetype CWallet::IsMine(const CTransaction& tx, uint32_t voutNum)
 
         case TX_SCRIPTHASH:
             scriptID = CScriptID(uint160(vSolutions[0]));
-            if (this->GetCScript(scriptID, subscript)) 
+            if (this->GetCScript(scriptID, subscript))
             {
                 // if this is a CLTV, handle it differently
                 if (subscript.IsCheckLockTimeVerify())
@@ -2412,6 +2483,107 @@ void CWalletTx::SetSaplingNoteData(mapSaplingNoteData_t &noteData)
             throw std::logic_error("CWalletTx::SetSaplingNoteData(): Invalid note");
         }
     }
+}
+
+std::pair<SproutNotePlaintext, SproutPaymentAddress> CWalletTx::DecryptSproutNote(
+    JSOutPoint jsop) const
+{
+    LOCK(pwallet->cs_wallet);
+
+    auto nd = this->mapSproutNoteData.at(jsop);
+    SproutPaymentAddress pa = nd.address;
+
+    // Get cached decryptor
+    ZCNoteDecryption decryptor;
+    if (!pwallet->GetNoteDecryptor(pa, decryptor)) {
+        // Note decryptors are created when the wallet is loaded, so it should always exist
+        throw std::runtime_error(strprintf(
+            "Could not find note decryptor for payment address %s",
+            EncodePaymentAddress(pa)));
+    }
+
+    auto hSig = this->vjoinsplit[jsop.js].h_sig(*pzcashParams, this->joinSplitPubKey);
+    try {
+        SproutNotePlaintext plaintext = SproutNotePlaintext::decrypt(
+                decryptor,
+                this->vjoinsplit[jsop.js].ciphertexts[jsop.n],
+                this->vjoinsplit[jsop.js].ephemeralKey,
+                hSig,
+                (unsigned char) jsop.n);
+
+        return std::make_pair(plaintext, pa);
+    } catch (const note_decryption_failed &err) {
+        // Couldn't decrypt with this spending key
+        throw std::runtime_error(strprintf(
+            "Could not decrypt note for payment address %s",
+            EncodePaymentAddress(pa)));
+    } catch (const std::exception &exc) {
+        // Unexpected failure
+        throw std::runtime_error(strprintf(
+            "Error while decrypting note for payment address %s: %s",
+            EncodePaymentAddress(pa), exc.what()));
+    }
+}
+
+boost::optional<std::pair<
+    SaplingNotePlaintext,
+    SaplingPaymentAddress>> CWalletTx::DecryptSaplingNote(SaplingOutPoint op) const
+{
+    // Check whether we can decrypt this SaplingOutPoint
+    if (this->mapSaplingNoteData.count(op) == 0) {
+        return boost::none;
+    }
+
+    auto output = this->vShieldedOutput[op.n];
+    auto nd = this->mapSaplingNoteData.at(op);
+
+    auto maybe_pt = SaplingNotePlaintext::decrypt(
+        output.encCiphertext,
+        nd.ivk,
+        output.ephemeralKey,
+        output.cm);
+    assert(static_cast<bool>(maybe_pt));
+    auto notePt = maybe_pt.get();
+
+    auto maybe_pa = nd.ivk.address(notePt.d);
+    assert(static_cast<bool>(maybe_pa));
+    auto pa = maybe_pa.get();
+
+    return std::make_pair(notePt, pa);
+}
+
+boost::optional<std::pair<
+    SaplingNotePlaintext,
+    SaplingPaymentAddress>> CWalletTx::RecoverSaplingNote(
+        SaplingOutPoint op, std::set<uint256>& ovks) const
+{
+    auto output = this->vShieldedOutput[op.n];
+
+    for (auto ovk : ovks) {
+        auto outPt = SaplingOutgoingPlaintext::decrypt(
+            output.outCiphertext,
+            ovk,
+            output.cv,
+            output.cm,
+            output.ephemeralKey);
+        if (!outPt) {
+            continue;
+        }
+
+        auto maybe_pt = SaplingNotePlaintext::decrypt(
+            output.encCiphertext,
+            output.ephemeralKey,
+            outPt->esk,
+            outPt->pk_d,
+            output.cm);
+        assert(static_cast<bool>(maybe_pt));
+        auto notePt = maybe_pt.get();
+
+        return std::make_pair(notePt, SaplingPaymentAddress(notePt.d, outPt->pk_d));
+    }
+
+    // Couldn't recover with any of the provided OutgoingViewingKeys
+    return boost::none;
 }
 
 int64_t CWalletTx::GetTxTime() const
@@ -2763,6 +2935,8 @@ int CWallet::ScanForWalletTransactions(CBlockIndex* pindexStart, bool fUpdate)
 
 void CWallet::ReacceptWalletTransactions()
 {
+    if ( IsInitialBlockDownload() )
+        return;
     // If transactions aren't being broadcasted, don't let them into local mempool either
     if (!fBroadcastTransactions)
         return;
@@ -2799,9 +2973,9 @@ void CWallet::ReacceptWalletTransactions()
             bool invalid = state.IsInvalid(nDoS);
 
             // log rejection and deletion
-            // printf("ERROR reaccepting wallet transaction %s to mempool, reason: %s, DoS: %d\n", wtx.GetHash().ToString().c_str(), state.GetRejectReason().c_str(), nDoS);
+            //printf("ERROR reaccepting wallet transaction %s to mempool, reason: %s, DoS: %d\n", wtx.GetHash().ToString().c_str(), state.GetRejectReason().c_str(), nDoS);
 
-            if (!wtx.IsCoinBase() && invalid && nDoS > 0)
+            if (!wtx.IsCoinBase() && invalid && nDoS > 0 && state.GetRejectReason() != "tx-overwinter-expired")
             {
                 LogPrintf("erasing transaction %s\n", wtx.GetHash().GetHex().c_str());
                 vwtxh.push_back(wtx.GetHash());
@@ -2818,7 +2992,7 @@ bool CWalletTx::RelayWalletTransaction()
 {
     if ( pwallet == 0 )
     {
-        fprintf(stderr,"unexpected null pwallet in RelayWalletTransaction\n");
+        //fprintf(stderr,"unexpected null pwallet in RelayWalletTransaction\n");
         return(false);
     }
     assert(pwallet->GetBroadcastTransactions());
@@ -3229,7 +3403,7 @@ void CWallet::AvailableCoins(vector<COutput>& vCoins, bool fOnlyConfirmed, const
             int nDepth = pcoin->GetDepthInMainChain();
             if (nDepth < 0)
                 continue;
- 
+
             for (int i = 0; i < pcoin->vout.size(); i++)
             {
                 isminetype mine = IsMine(pcoin->vout[i]);
@@ -3626,9 +3800,13 @@ bool CWallet::CreateTransaction(const vector<CRecipient>& vecSend, CWalletTx& wt
     wtxNew.fTimeReceivedIsTxTime = true;
     wtxNew.BindWallet(this);
     int nextBlockHeight = chainActive.Height() + 1;
-    CMutableTransaction txNew = CreateNewContextualCMutableTransaction(
-                                                                       Params().GetConsensus(), nextBlockHeight);
+    CMutableTransaction txNew = CreateNewContextualCMutableTransaction(Params().GetConsensus(), nextBlockHeight);
+    
+    //if ((uint32_t)chainActive.LastTip()->nTime < ASSETCHAINS_STAKED_HF_TIMESTAMP)
+    if ( !komodo_hardfork_active((uint32_t)chainActive.LastTip()->nTime) )
         txNew.nLockTime = (uint32_t)chainActive.LastTip()->nTime + 1; // set to a time close to now
+    else
+        txNew.nLockTime = (uint32_t)chainActive.Tip()->GetMedianTimePast();
 
     // Activates after Overwinter network upgrade
     if (NetworkUpgradeActive(nextBlockHeight, Params().GetConsensus(), Consensus::UPGRADE_OVERWINTER)) {
@@ -4755,9 +4933,8 @@ CWalletKey::CWalletKey(int64_t nExpires)
     nTimeExpires = nExpires;
 }
 
-int CMerkleTx::SetMerkleBranch(const CBlock& block)
+void CMerkleTx::SetMerkleBranch(const CBlock& block)
 {
-    AssertLockHeld(cs_main);
     CBlock blockTmp;
 
     // Update the tx's hashBlock
@@ -4772,21 +4949,10 @@ int CMerkleTx::SetMerkleBranch(const CBlock& block)
         vMerkleBranch.clear();
         nIndex = -1;
         LogPrintf("ERROR: SetMerkleBranch(): couldn't find tx in block\n");
-        return 0;
     }
 
     // Fill in merkle branch
     vMerkleBranch = block.GetMerkleBranch(nIndex);
-
-    // Is the tx in a block that's in the main chain
-    BlockMap::iterator mi = mapBlockIndex.find(hashBlock);
-    if (mi == mapBlockIndex.end())
-        return 0;
-    const CBlockIndex* pindex = (*mi).second;
-    if (!pindex || !chainActive.Contains(pindex))
-        return 0;
-
-    return chainActive.Height() - pindex->GetHeight() + 1;
 }
 
 int CMerkleTx::GetDepthInMainChainINTERNAL(const CBlockIndex* &pindexRet) const
@@ -4867,7 +5033,7 @@ void CWallet::GetFilteredNotes(
 }
 
 /**
- * Find notes in the wallet filtered by payment addresses, min depth, max depth, 
+ * Find notes in the wallet filtered by payment addresses, min depth, max depth,
  * if the note is spent, if a spending key is required, and if the notes are locked.
  * These notes are decrypted and added to the output parameter vector, outEntries.
  */
@@ -4887,11 +5053,21 @@ void CWallet::GetFilteredNotes(
         CWalletTx wtx = p.second;
 
         // Filter the transactions before checking for notes
-        if (!CheckFinalTx(wtx) ||
-            wtx.GetBlocksToMaturity() > 0 ||
-            wtx.GetDepthInMainChain() < minDepth ||
-            wtx.GetDepthInMainChain() > maxDepth) {
+        if (!CheckFinalTx(wtx) || wtx.GetBlocksToMaturity() > 0)
             continue;
+
+        if (minDepth > 1) {
+            int nHeight    = tx_height(wtx.GetHash());
+            int nDepth     = wtx.GetDepthInMainChain();
+            int dpowconfs  = komodo_dpowconfs(nHeight,nDepth);
+            if ( dpowconfs < minDepth || dpowconfs > maxDepth) {
+                continue;
+            }
+        } else {
+            if ( wtx.GetDepthInMainChain() < minDepth ||
+                wtx.GetDepthInMainChain() > maxDepth) {
+                continue;
+            }
         }
 
         for (auto & pair : wtx.mapSproutNoteData) {
@@ -5003,6 +5179,22 @@ void CWallet::GetFilteredNotes(
 //
 // Shielded key and address generalizations
 //
+
+bool IncomingViewingKeyBelongsToWallet::operator()(const libzcash::SproutPaymentAddress &zaddr) const
+{
+    return m_wallet->HaveSproutViewingKey(zaddr);
+}
+
+bool IncomingViewingKeyBelongsToWallet::operator()(const libzcash::SaplingPaymentAddress &zaddr) const
+{
+    libzcash::SaplingIncomingViewingKey ivk;
+    return m_wallet->GetSaplingIncomingViewingKey(zaddr, ivk);
+}
+
+bool IncomingViewingKeyBelongsToWallet::operator()(const libzcash::InvalidEncoding& no) const
+{
+    return false;
+}
 
 bool PaymentAddressBelongsToWallet::operator()(const libzcash::SproutPaymentAddress &zaddr) const
 {
@@ -5120,10 +5312,10 @@ SpendingKeyAddResult AddSpendingKeyToWallet::operator()(const libzcash::SaplingE
                 m_wallet->mapSaplingZKeyMetadata[ivk].seedFp = seedFp;
             }
             return KeyAdded;
-        }    
+        }
     }
 }
 
-SpendingKeyAddResult AddSpendingKeyToWallet::operator()(const libzcash::InvalidEncoding& no) const { 
+SpendingKeyAddResult AddSpendingKeyToWallet::operator()(const libzcash::InvalidEncoding& no) const {
     throw JSONRPCError(RPC_INVALID_ADDRESS_OR_KEY, "Invalid spending key");
 }

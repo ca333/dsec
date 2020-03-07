@@ -78,10 +78,12 @@ namespace {
 // Global state variables
 //
 extern uint16_t ASSETCHAINS_P2PPORT;
+extern int8_t is_STAKED(const char *chain_name);
+extern char ASSETCHAINS_SYMBOL[65];
 
 bool fDiscover = true;
 bool fListen = true;
-uint64_t nLocalServices = NODE_NETWORK;
+uint64_t nLocalServices = NODE_NETWORK | NODE_NSPV;
 CCriticalSection cs_mapLocalHost;
 map<CNetAddr, LocalServiceInfo> mapLocalHost;
 static bool vfLimited[NET_MAX] = {};
@@ -442,6 +444,15 @@ void CNode::CloseSocketDisconnect()
         vRecvMsg.clear();
 }
 
+extern int32_t KOMODO_NSPV;
+#ifndef KOMODO_NSPV_FULLNODE
+#define KOMODO_NSPV_FULLNODE (KOMODO_NSPV <= 0)
+#endif // !KOMODO_NSPV_FULLNODE
+
+#ifndef KOMODO_NSPV_SUPERLITE
+#define KOMODO_NSPV_SUPERLITE (KOMODO_NSPV > 0)
+#endif // !KOMODO_NSPV_SUPERLITE
+
 void CNode::PushVersion()
 {
     int nBestHeight = g_signals.GetHeight().get_value_or(0);
@@ -456,6 +467,7 @@ void CNode::PushVersion()
         LogPrint("net", "send version message: version %d, blocks=%d, us=%s, peer=%d\n", PROTOCOL_VERSION, nBestHeight, addrMe.ToString(), id);
     PushMessage("version", PROTOCOL_VERSION, nLocalServices, nTime, addrYou, addrMe,
                 nLocalHostNonce, strSubVersion, nBestHeight, true);
+//fprintf(stderr,"KOMODO_NSPV.%d PUSH services.%llx\n",KOMODO_NSPV,(long long)nLocalServices);
 }
 
 
@@ -676,12 +688,6 @@ int CNetMessage::readData(const char *pch, unsigned int nBytes)
 
     return nCopy;
 }
-
-
-
-
-
-
 
 
 
@@ -1275,7 +1281,6 @@ void ThreadSocketHandler()
     }
 }
 
-
 void ThreadDNSAddressSeed()
 {
     // goal: only query DNS seeds if address need is acute
@@ -1390,12 +1395,16 @@ void ThreadOpenConnections()
         if (GetTime() - nStart > 60) {
             static bool done = false;
             if (!done) {
-                //LogPrintf("Adding fixed seed nodes as DNS doesn't seem to be available.\n");
-                LogPrintf("Adding fixed seed nodes.\n");
-                addrman.Add(convertSeed6(Params().FixedSeeds()), CNetAddr("127.0.0.1"));
+                // skip DNS seeds for staked chains.
+                if ( is_STAKED(ASSETCHAINS_SYMBOL) == 0 ) {
+                    //LogPrintf("Adding fixed seed nodes as DNS doesn't seem to be available.\n");
+                    LogPrintf("Adding fixed seed nodes.\n");
+                    addrman.Add(convertSeed6(Params().FixedSeeds()), CNetAddr("127.0.0.1"));
+                }
                 done = true;
             }
         }
+
 
         //
         // Choose an address to connect to based on most recently seen
@@ -1803,6 +1812,12 @@ void StartNode(boost::thread_group& threadGroup, CScheduler& scheduler)
 
     Discover(threadGroup);
 
+    // skip DNS seeds for staked chains.
+    extern int8_t is_STAKED(const char *chain_name);
+    extern char ASSETCHAINS_SYMBOL[65];
+    if ( is_STAKED(ASSETCHAINS_SYMBOL) != 0 )
+        SoftSetBoolArg("-dnsseed", false);
+
     //
     // Start threads
     //
@@ -1835,7 +1850,7 @@ bool StopNode()
         for (int i=0; i<MAX_OUTBOUND_CONNECTIONS; i++)
             semOutbound->post();
 
-    if (fAddressesInitialized)
+    if (KOMODO_NSPV_FULLNODE && fAddressesInitialized)
     {
         DumpAddresses();
         fAddressesInitialized = false;
@@ -1915,8 +1930,7 @@ void RelayTransaction(const CTransaction& tx, const CDataStream& ss)
         {
             if (pnode->pfilter->IsRelevantAndUpdate(tx))
                 pnode->PushInventory(inv);
-        } else
-            pnode->PushInventory(inv);
+        } else pnode->PushInventory(inv);
     }
 }
 
